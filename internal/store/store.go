@@ -1,52 +1,14 @@
 package store
-
-import (
-	"database/sql"
-	"fmt"
-	"os"
-	"path/filepath"
-
-	_ "modernc.org/sqlite"
-)
-
-type DB struct {
-	*sql.DB
-}
-
-func Open(dataDir string) (*DB, error) {
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		return nil, fmt.Errorf("mkdir: %w", err)
-	}
-	dsn := filepath.Join(dataDir, "cutoff.db") + "?_journal_mode=WAL&_busy_timeout=5000"
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("open: %w", err)
-	}
-	db.SetMaxOpenConns(1)
-	if err := migrate(db); err != nil {
-		return nil, fmt.Errorf("migrate: %w", err)
-	}
-	return &DB{db}, nil
-}
-
-func migrate(db *sql.DB) error {
-	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS links (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        slug TEXT NOT NULL UNIQUE,
-        target_url TEXT NOT NULL,
-        title TEXT,
-        click_count INTEGER DEFAULT 0,
-        expires_at DATETIME,
-        active INTEGER DEFAULT 1,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-     );
-     CREATE TABLE IF NOT EXISTS clicks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        link_id INTEGER NOT NULL,
-        referrer TEXT,
-        ip_hash TEXT,
-        user_agent TEXT,
-        clicked_at DATETIME DEFAULT CURRENT_TIMESTAMP
-     );`)
-	return err
-}
+import("crypto/rand";"database/sql";"encoding/base64";"fmt";"os";"path/filepath";"time";_ "modernc.org/sqlite")
+type DB struct{*sql.DB}
+type Link struct{ID int64 `json:"id"`;Code string `json:"code"`;LongURL string `json:"long_url"`;Title string `json:"title"`;Clicks int `json:"clicks"`;Active bool `json:"active"`;ExpiresAt *time.Time `json:"expires_at"`;CreatedAt time.Time `json:"created_at"`}
+func Open(dataDir string)(*DB,error){if err:=os.MkdirAll(dataDir,0755);err!=nil{return nil,fmt.Errorf("mkdir: %w",err)};dsn:=filepath.Join(dataDir,"cutoff.db")+"?_journal_mode=WAL&_busy_timeout=5000";db,err:=sql.Open("sqlite",dsn);if err!=nil{return nil,fmt.Errorf("open: %w",err)};db.SetMaxOpenConns(1);if err:=migrate(db);err!=nil{return nil,fmt.Errorf("migrate: %w",err)};return &DB{db},nil}
+func migrate(db *sql.DB)error{_,err:=db.Exec(`CREATE TABLE IF NOT EXISTS links(id INTEGER PRIMARY KEY AUTOINCREMENT,code TEXT NOT NULL UNIQUE,long_url TEXT NOT NULL,title TEXT DEFAULT '',clicks INTEGER DEFAULT 0,active INTEGER DEFAULT 1,expires_at DATETIME,created_at DATETIME DEFAULT CURRENT_TIMESTAMP);CREATE INDEX IF NOT EXISTS link_code ON links(code);`);return err}
+func genCode()string{b:=make([]byte,5);rand.Read(b);return base64.URLEncoding.EncodeToString(b)[:7]}
+func(db *DB)CreateLink(l *Link)error{if l.Code==""{l.Code=genCode()};var active int;if l.Active{active=1};res,err:=db.Exec(`INSERT INTO links(code,long_url,title,active,expires_at)VALUES(?,?,?,?,?)`,l.Code,l.LongURL,l.Title,active,l.ExpiresAt);if err!=nil{return err};l.ID,_=res.LastInsertId();return nil}
+func(db *DB)Resolve(code string)(*Link,error){l:=&Link{};var active int;err:=db.QueryRow(`SELECT id,code,long_url,title,clicks,active,expires_at,created_at FROM links WHERE code=?`,code).Scan(&l.ID,&l.Code,&l.LongURL,&l.Title,&l.Clicks,&active,&l.ExpiresAt,&l.CreatedAt);if err!=nil{return nil,err};l.Active=active==1;return l,nil}
+func(db *DB)Click(id int64){db.Exec(`UPDATE links SET clicks=clicks+1 WHERE id=?`,id)}
+func(db *DB)ListLinks()([]Link,error){rows,err:=db.Query(`SELECT id,code,long_url,title,clicks,active,expires_at,created_at FROM links ORDER BY created_at DESC`);if err!=nil{return nil,err};defer rows.Close();var out[]Link;for rows.Next(){var l Link;var active int;rows.Scan(&l.ID,&l.Code,&l.LongURL,&l.Title,&l.Clicks,&active,&l.ExpiresAt,&l.CreatedAt);l.Active=active==1;out=append(out,l)};return out,nil}
+func(db *DB)ToggleLink(id int64)error{_,err:=db.Exec(`UPDATE links SET active=1-active WHERE id=?`,id);return err}
+func(db *DB)DeleteLink(id int64)error{_,err:=db.Exec(`DELETE FROM links WHERE id=?`,id);return err}
+func(db *DB)Stats()(map[string]interface{},error){var total,active,clicks int;db.QueryRow(`SELECT COUNT(*) FROM links`).Scan(&total);db.QueryRow(`SELECT COUNT(*) FROM links WHERE active=1`).Scan(&active);db.QueryRow(`SELECT COALESCE(SUM(clicks),0) FROM links`).Scan(&clicks);return map[string]interface{}{"total":total,"active":active,"total_clicks":clicks},nil}
