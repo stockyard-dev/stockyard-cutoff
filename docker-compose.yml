@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  cutoff:
+    build: .
+    ports:
+      - "9330:9330"
+    environment:
+      - PORT=9330
+      - DATA_DIR=/data
+      - CUTOFF_LICENSE_KEY=
+    volumes:
+      - cutoff_data:/data
+    restart: unless-stopped
+volumes:
+  cutoff_data:
