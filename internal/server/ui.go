@@ -77,4 +77,21 @@ async function sub(){await fetch(A+'/rules',{method:'POST',headers:{'Content-Typ
 function cm(){document.getElementById('mbg').classList.remove('open');}
 function esc(s){if(!s)return'';const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 load();
-</script></body></html>`
+</script><script>
+(function(){
+  fetch('/api/config').then(function(r){return r.json()}).then(function(cfg){
+    if(!cfg||typeof cfg!=='object')return;
+    if(cfg.dashboard_title){
+      document.title=cfg.dashboard_title;
+      var h1=document.querySelector('h1');
+      if(h1){
+        var inner=h1.innerHTML;
+        var firstSpan=inner.match(/<span[^>]*>[^<]*<\/span>/);
+        if(firstSpan){h1.innerHTML=firstSpan[0]+' '+cfg.dashboard_title}
+        else{h1.textContent=cfg.dashboard_title}
+      }
+    }
+  }).catch(function(){});
+})();
+</script>
+</body></html>`
